@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds #-}
 
@@ -8,9 +10,17 @@ module Lib
 
 import Test.TWebDriver.Commands
 import Test.TWebDriver
+import Data.Proxy
 
-myS :: Selector Button
-myS = Selector $ ByXPath "//button"
+prepareXPath' "//button/span"
 
+myS :: WD ()
+myS = easyClick (Proxy :: Proxy "//button/span")
+
+{-
+
+click =<< findElement $ ByXPath "//button"
+
+-}
 someFunc :: IO ()
-someFunc = print wow
+someFunc = pure ()

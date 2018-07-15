@@ -1,19 +1,34 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Test.TWebDriver.Commands where
 
 import qualified Test.WebDriver.Monad as WDM
-import           Test.WebDriver.Commands hiding (Element, Selector, click)
+import           Test.WebDriver.Commands hiding (Element, Selector (..), click, ByXPath)
 import qualified Test.WebDriver.Commands as WDM
 import qualified Test.WebDriver.Commands.Internal as WDM
 import           Data.Kind
 import qualified Data.Aeson as JSON
 import Test.TWebDriver.Commands.TH
+import qualified Data.Text as T
+import Data.Proxy
+import GHC.TypeLits
+import Data.Reflection
+import Language.Haskell.TH
+import Control.Monad
 
 -- * Web Elements
 
@@ -33,20 +48,33 @@ instance JSON.FromJSON (Element ty) where
 newtype Selector (ty :: ElementType) = Selector { unSelector :: WDM.Selector }
   deriving (Eq, Show, Ord)
 
+type family DecideElemTy (sym :: Symbol) :: ElementType where
+  DecideElemTy "button" = Button
+
+class KnownSymbol sym => Clickable (sym :: Symbol) where
+instance Clickable "button"
+instance Clickable "select"
+instance Clickable "radio"
+instance Clickable "a"
+
+myFindElem :: Selector a -> WDM.WD (Element a)
+myFindElem (Selector sel) = Element <$> findElem sel
+
+isClickable :: String -> Bool
+isClickable _ = True
+
+prepareXPath' :: String -> DecsQ
+prepareXPath' name = do
+  if (isClickable name) then create_instance else pure []
+  where
+    create_instance =
+      let className = mkName "Clickable"
+      in pure [InstanceD Nothing [] (AppT (ConT className) (LitT (StrTyLit "//button/span"))) []]
+
 instance JSON.ToJSON (Selector ty) where
   toJSON = JSON.toJSON . unSelector
 
-type family Clickable (ty :: ElementType) :: Constraint where
-  Clickable A = ()
-  Clickable RadioButton = ()
-  Clickable Select = ()
-
 -- * Commands
 
-click :: Clickable ty => Element ty -> WDM.WD ()
-click = WDM.click . unElement
-
-$(mkXPath "wow" "yis")
-
-whoa :: String
-whoa = unXPath wow
+easyClick :: Clickable sym => Proxy sym -> WDM.WD ()
+easyClick proxy = WDM.click =<< WDM.findElem (WDM.ByXPath (T.pack (symbolVal proxy)))

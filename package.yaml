@@ -27,6 +27,8 @@ library:
     - webdriver
     - template-haskell
     - aeson
+    - reflection
+    - text
   source-dirs: src
 
 executables:
