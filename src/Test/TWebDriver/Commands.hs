@@ -20,7 +20,7 @@ import qualified Test.WebDriver.Monad as WDM
 import           Test.WebDriver.Commands hiding (Element, Selector (..), click, ByXPath)
 import qualified Test.WebDriver.Commands as WDM
 import qualified Test.WebDriver.Commands.Internal as WDM
-import           Data.Kind
+import           Data.Kind hiding (Type)
 import qualified Data.Aeson as JSON
 import Test.TWebDriver.Commands.TH
 import qualified Data.Text as T
@@ -70,6 +70,12 @@ prepareXPath' name = do
     create_instance =
       let className = mkName "Clickable"
       in pure [InstanceD Nothing [] (AppT (ConT className) (LitT (StrTyLit "//button/span"))) []]
+
+withClassInstance :: String -> Q Exp
+withClassInstance val = do
+  prepareXPath' val
+  let proxyName = mkName "Proxy"
+  pure $ SigE (ConE proxyName) (AppT (ConT proxyName) (LitT (StrTyLit val)))
 
 instance JSON.ToJSON (Selector ty) where
   toJSON = JSON.toJSON . unSelector

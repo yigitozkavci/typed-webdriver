@@ -15,7 +15,7 @@ import Data.Proxy
 prepareXPath' "//button/span"
 
 myS :: WD ()
-myS = easyClick (Proxy :: Proxy "//button/span")
+myS = easyClick $(withClassInstance "//button/span")
 
 {-
 
