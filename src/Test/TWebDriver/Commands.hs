@@ -1,3 +1,7 @@
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -17,70 +21,117 @@
 module Test.TWebDriver.Commands where
 
 import qualified Test.WebDriver.Monad as WDM
-import           Test.WebDriver.Commands hiding (Element, Selector (..), click, ByXPath)
+import           Test.WebDriver.Commands hiding (Element (..), Selector (..), click)
 import qualified Test.WebDriver.Commands as WDM
-import qualified Test.WebDriver.Commands.Internal as WDM
 import           Data.Kind hiding (Type)
 import qualified Data.Aeson as JSON
-import Test.TWebDriver.Commands.TH
 import qualified Data.Text as T
 import Data.Proxy
 import GHC.TypeLits
-import Data.Reflection
 import Language.Haskell.TH
-import Control.Monad
+import Text.XML.HXT.XPath.XPathEval
+import Text.XML.HXT.XPath.XPathDataTypes as X
+import Control.Arrow ((>>>))
+import qualified Data.List.NonEmpty as NE
+import Data.Functor (($>))
 
 -- * Web Elements
 
 data ElementType = Select | A | Button | RadioButton | Input | B | I | Span
 
-data Element (ty :: ElementType) = Element { unElement :: WDM.Element }
+data Element (name :: Symbol) (xs :: [Capability]) = Element { unElement :: WDM.Element }
   deriving (Eq, Ord, Read, Show)
 
-instance JSON.ToJSON (Element ty) where
+instance JSON.ToJSON (Element name cap) where
   toJSON = JSON.toJSON . unElement
 
-instance JSON.FromJSON (Element ty) where
+instance JSON.FromJSON (Element name cap) where
   parseJSON = fmap Element . JSON.parseJSON
 
 -- * Selectors
 
-newtype Selector (ty :: ElementType) = Selector { unSelector :: WDM.Selector }
-  deriving (Eq, Show, Ord)
+data Selector (name :: Symbol) (xs :: [Capability]) = Selector
 
-type family DecideElemTy (sym :: Symbol) :: ElementType where
-  DecideElemTy "button" = Button
+instance KnownSymbol name => JSON.ToJSON (Selector name cap) where
+  toJSON _ = JSON.toJSON (WDM.ByXPath $ T.pack $ symbolVal (Proxy :: Proxy name))
 
-class KnownSymbol sym => Clickable (sym :: Symbol) where
-instance Clickable "button"
-instance Clickable "select"
-instance Clickable "radio"
-instance Clickable "a"
-
-myFindElem :: Selector a -> WDM.WD (Element a)
-myFindElem (Selector sel) = Element <$> findElem sel
-
-isClickable :: String -> Bool
-isClickable _ = True
-
-prepareXPath' :: String -> DecsQ
-prepareXPath' name = do
-  if (isClickable name) then create_instance else pure []
-  where
-    create_instance =
-      let className = mkName "Clickable"
-      in pure [InstanceD Nothing [] (AppT (ConT className) (LitT (StrTyLit "//button/span"))) []]
-
-withClassInstance :: String -> Q Exp
-withClassInstance val = do
-  prepareXPath' val
-  let proxyName = mkName "Proxy"
-  pure $ SigE (ConE proxyName) (AppT (ConT proxyName) (LitT (StrTyLit val)))
-
-instance JSON.ToJSON (Selector ty) where
-  toJSON = JSON.toJSON . unSelector
+myFindElem :: forall name cap. KnownSymbol name => Selector name cap -> WDM.WD (Element name cap)
+myFindElem Selector = Element <$> findElem (WDM.ByXPath $ T.pack $ symbolVal (Proxy :: Proxy name))
 
 -- * Commands
 
-easyClick :: Clickable sym => Proxy sym -> WDM.WD ()
-easyClick proxy = WDM.click =<< WDM.findElem (WDM.ByXPath (T.pack (symbolVal proxy)))
+data Capability =
+    Clickable
+  | Hoverable
+  | ContainsText
+  deriving Show
+
+toPromotedTH :: Either String [Capability] -> Q Type
+toPromotedTH (Left err) = reportError err $> PromotedNilT
+toPromotedTH (Right []) = pure PromotedNilT
+toPromotedTH (Right (cap:xs)) = do
+  deeper <- toPromotedTH (Right xs)
+  pure $
+    AppT
+      (AppT
+        PromotedConsT
+        (PromotedT (mkName (show cap)))
+      )
+      deeper
+
+getTargetElement :: [XStep] -> Maybe ElementType
+getTargetElement [] = Nothing
+getTargetElement (x:xs) =
+  let Step _ (NameTest (show -> elemTy)) _ = NE.last (x NE.:| xs)
+  in
+    case elemTy of
+      "\"button\"" -> Just Button
+      "\"a\"" -> Just A
+      "\"span\"" -> Just Span
+      "\"select\"" -> Just Select
+      "\"radio\"" -> Just RadioButton
+      "\"input\"" -> Just Input
+      "\"b\"" -> Just B
+      "\"i\"" -> Just I
+      _ -> Nothing
+
+generateCapabilities :: String -> Either String [Capability]
+generateCapabilities = parseXPathExpr >>> \case
+  -- Right (PathExpr _ (Just (LocPath _ (_:Step Child (NameTest (qname)) []:_)))) ->
+  Right (PathExpr _ (Just (LocPath _ steps))) ->
+    case getTargetElement steps of
+      Nothing -> Left "Could not find the target element in xpath"
+      Just elemTy -> pure $
+        case elemTy of
+          Button -> [Clickable, Hoverable]
+          A -> [Clickable]
+          Span -> [ContainsText]
+          Select -> [Clickable]
+          RadioButton -> [Clickable]
+          Input -> [Clickable]
+          B -> []
+          I -> []
+  Right _ -> Left "XPath parsable but something is wrong with its structure"
+  Left _ -> Left "XPath not parsable"
+
+mkXPath :: String -> Q Exp
+mkXPath name = do
+  promotedTySig <- toPromotedTH (generateCapabilities name)
+  pure $
+    SigE
+      (ConE (mkName "Selector"))
+      (AppT
+        (AppT 
+          (ConT (mkName "Selector"))
+          (LitT (StrTyLit name))
+        )
+        promotedTySig
+      )
+
+type family CanClick (name :: Symbol) (xs :: [Capability]) :: Constraint where
+  CanClick name '[] = TypeError ('Text "The following XPath is not clickable:" ':$$: 'Text name)
+  CanClick _ ('Clickable ': xs) = ()
+  CanClick name (x ': xs) = CanClick name xs
+
+click :: forall name xs. CanClick name xs => Element name xs -> WDM.WD ()
+click = WDM.click . unElement

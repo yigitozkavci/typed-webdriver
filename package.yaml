@@ -23,12 +23,19 @@ dependencies:
 - base >= 4.7 && < 5
 
 library:
+  ghc-options:
+  - -threaded
+  - -rtsopts
+  - -with-rtsopts=-N
+  - -Wall
   dependencies:
     - webdriver
     - template-haskell
     - aeson
     - reflection
     - text
+    - hxt-xpath
+    - pretty-simple
   source-dirs: src
 
 executables:

@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -5,17 +6,13 @@
 
 module Lib
     ( someFunc
-    , module Test.TWebDriver.Commands
     ) where
 
 import Test.TWebDriver.Commands
 import Test.TWebDriver
-import Data.Proxy
-
-prepareXPath' "//button/span"
 
 myS :: WD ()
-myS = easyClick $(withClassInstance "//button/span")
+myS = click =<< myFindElem $(mkXPath "//a/button/descendant::a[contains(text(), 'wow')]")
 
 {-
 
@@ -23,4 +20,4 @@ click =<< findElement $ ByXPath "//button"
 
 -}
 someFunc :: IO ()
-someFunc = pure ()
+someFunc = myS `seq` pure ()
