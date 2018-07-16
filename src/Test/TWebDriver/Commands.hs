@@ -1,3 +1,4 @@
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -114,6 +115,19 @@ generateCapabilities = parseXPathExpr >>> \case
   Right _ -> Left "XPath parsable but something is wrong with its structure"
   Left _ -> Left "XPath not parsable"
 
+type family CatError (name :: Symbol) :: b where
+  CatError name =
+    TypeError ( 'Text "(.   \\"
+          ':$$: 'Text "\\  |   "
+          ':$$: 'Text "     \\ |___(\\--/)"
+          ':$$: 'Text "   __/    (  . . )"
+          ':$$: 'Text "  \"'._.    '-.O.'"
+          ':$$: 'Text "       '-.  \\ \"|\\"
+          ':$$: 'Text "          '.,,/'.,,mrf"
+          ':$$: 'Text "The following XPath is not clickable:"
+          ':$$: 'Text name
+    )
+
 mkXPath :: String -> Q Exp
 mkXPath name = do
   promotedTySig <- toPromotedTH (generateCapabilities name)
@@ -129,7 +143,7 @@ mkXPath name = do
       )
 
 type family CanClick (name :: Symbol) (xs :: [Capability]) :: Constraint where
-  CanClick name '[] = TypeError ('Text "The following XPath is not clickable:" ':$$: 'Text name)
+  CanClick name '[] = CatError name
   CanClick _ ('Clickable ': xs) = ()
   CanClick name (x ': xs) = CanClick name xs
 
