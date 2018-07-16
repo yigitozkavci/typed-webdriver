@@ -1,18 +1,16 @@
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DataKinds #-}
 
 module Lib
     ( someFunc
     ) where
 
-import Test.TWebDriver.Commands
-import Test.TWebDriver
+--------------------------------------------------------------------------------
+import           Test.TWebDriver.Commands
+--------------------------------------------------------------------------------
 
 myS :: WD ()
-myS = click =<< myFindElem $(mkXPath "//a/button/descendant::a[contains(text(), 'wow')]")
+myS = click =<< findElem $(mkXPath "//a/button/descendant::a[contains(text(), 'wow')]")
 
 {-
 
